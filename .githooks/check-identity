@@ -1,0 +1,29 @@
+#!/bin/sh
+# Fails unless both the author and the committer of the commit in flight are the pinned
+# identity. Shared by pre-commit and pre-merge-commit; $1 names the caller.
+hooks_dir=$(dirname "$0")
+. "$hooks_dir/identity.sh"
+if [ -f "$hooks_dir/identity.local.sh" ]; then
+  . "$hooks_dir/identity.local.sh"
+fi
+hook=${1:-check-identity}
+# Identity pinning is opt-in. With no identity configured, a contributor's own
+# git config governs their commits and there is nothing to enforce.
+if [ -z "$GIT_IDENTITY_NAME" ] || [ -z "$GIT_IDENTITY_EMAIL" ]; then
+  exit 0
+fi
+expected="$GIT_IDENTITY_NAME <$GIT_IDENTITY_EMAIL>"
+status=0
+for role in AUTHOR COMMITTER; do
+  ident=$(git var "GIT_${role}_IDENT")
+  ident=${ident% *} # drop the timezone
+  ident=${ident% *} # drop the timestamp
+  if [ "$ident" != "$expected" ]; then
+    printf '%s: %s is %s; this repository commits only as %s\n' "$hook" "$role" "$ident" "$expected" >&2
+    status=1
+  fi
+done
+if [ "$status" -ne 0 ]; then
+  printf 'Run `sh .githooks/install` to pin the identity, then commit without --author, -c user.*, or GIT_AUTHOR_*/GIT_COMMITTER_* overrides.\n' >&2
+fi
+exit "$status"

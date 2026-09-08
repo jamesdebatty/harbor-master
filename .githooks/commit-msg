@@ -1,0 +1,30 @@
+#!/bin/sh
+# Rejects a commit whose message credits a third party. This rule is about the
+# project, not about who maintains it, so it applies whether or not an identity
+# is pinned; with none set, the self-exemption below simply never fires.
+hooks_dir=$(dirname "$0")
+. "$hooks_dir/identity.sh"
+if [ -f "$hooks_dir/identity.local.sh" ]; then
+  . "$hooks_dir/identity.local.sh"
+fi
+
+attribution='co-authored-by|co-developed-by|assisted-by|generated-by|generated-with|helped-by|signed-off-by|reviewed-by|acked-by|tested-by|suggested-by|reported-by|mentored-by'
+# Scan the message body only: skip comment lines and stop at the `git commit -v` scissors line.
+third_party=$(awk '/^# -+ >8 -+$/ { exit } !/^#/' "$1" \
+  | grep -iE "^[[:space:]]*($attribution)[[:space:]]*:")
+# Whose credit is not third-party: the pinned address, or — with no identity
+# pinned — the committer's own, so a contributor can still sign off their work.
+exempt_email="$GIT_IDENTITY_EMAIL"
+if [ -z "$exempt_email" ]; then
+  committer=$(git var GIT_COMMITTER_IDENT 2>/dev/null) || committer=''
+  exempt_email=${committer#*<}
+  exempt_email=${exempt_email%%>*}
+  [ "$exempt_email" = "$committer" ] && exempt_email=''
+fi
+if [ -n "$third_party" ] && [ -n "$exempt_email" ]; then
+  third_party=$(printf '%s\n' "$third_party" | grep -vF "<$exempt_email>")
+fi
+if [ -n "$third_party" ]; then
+  printf 'commit-msg: this repository credits no third party in commit messages; remove:\n%s\n' "$third_party" >&2
+  exit 1
+fi

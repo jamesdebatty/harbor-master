@@ -1,0 +1,206 @@
+metadata:
+  schemaVersion: 1.0.0
+  projectId: replace-me
+  displayName: Replace Me
+  canonicalPath: .graph-shipper/project.yaml
+repository:
+  github: owner/repository
+  defaultBranch: main
+  primaryCloneRealpath: /absolute/path/to/project
+  repoFacts:
+    observedAt: 2026-08-13T00:00:00Z
+    observedHeadSha: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    evidenceRef: Human-reviewed repository survey
+    revalidateBefore: [binding_admission, work_run, merge, post_merge]
+credentials:
+  references:
+    - id: anthropic-default
+      purpose: anthropic_model
+    - id: openai-default
+      purpose: openai_model
+# Human-approved exact argv prefixes for commands whose executable is not node.
+# Prefix pinning is strict and wrappers stay refused; leave empty for a
+# node-script-only project.
+executableAllowlist: []
+# Every command must list its entry script and every imported/delegated local
+# source in authorizationSources. Paths are project-relative and exact.
+# A command referenced by workspace.preparationCommandRefs also declares
+# dependencySources.manifest and dependencySources.lockfile. Both paths must
+# name different regular files that appear in authorizationSources so
+# activation binds the install to its inputs. Other commands do not declare
+# dependencySources.
+#
+# Commands run with PATH plus a runtime-owned HOME and TMPDIR under the private
+# data root, so a package manager has a config and cache directory without ever
+# reading operator state. The home is per project, so that cache survives
+# between Work Runs. If a command genuinely needs an operator variable as well,
+# name it in environmentPasslist: names only, values read at execution time and
+# never persisted. The passlist admits by name from a small runtime-owned set --
+# locale, proxy, TLS trust roots, and non-authenticating package-manager
+# settings. Credentials, names that merely point at a credential file, and
+# loader controls are refused at Binding Admission; credentials reach commands
+# only through the Credential Broker.
+commands:
+  # A verification check names a command; there is no builtin verifier. Replace
+  # this with the project's real gate. If it is not a node script, add its exact
+  # argv prefix to executableAllowlist above.
+  - id: project-test
+    argv: [node, scripts/replace-with-project-test.mjs]
+    authorizationSources: [scripts/replace-with-project-test.mjs]
+    cwd: worktree
+    timeoutSeconds: 900
+    credentialRefs: []
+    sideEffect: none
+    idempotence: pure
+    parameters: {}
+models:
+  buildAssignments:
+    - id: anthropic-build
+      provider: anthropic
+      transport: api # or subscription_cli for the authenticated Claude CLI
+      modelRef: configured-build-model
+      credentialRef: anthropic-default # required for api; omit for subscription_cli
+      fallbackAssignmentIds: []
+    - id: openai-build
+      provider: openai
+      transport: api # or subscription_cli for the authenticated Codex CLI
+      modelRef: configured-openai-build-model
+      credentialRef: openai-default # required for api; omit for subscription_cli
+      fallbackAssignmentIds: []
+  reviewAssignments:
+    - id: openai-review
+      provider: openai
+      transport: api
+      modelRef: configured-review-model
+      credentialRef: openai-default # required for api; omit for subscription_cli
+      fallbackAssignmentIds: []
+    - id: anthropic-review
+      provider: anthropic
+      transport: api
+      modelRef: configured-anthropic-review-model
+      credentialRef: anthropic-default # required for api; omit for subscription_cli
+      fallbackAssignmentIds: []
+  requireOppositeProvider: true
+  # Only these tracked files may enter planner/reviewer context. Included files
+  # with credential-like content still fail closed before a provider call.
+  repositoryContext:
+    includeGlobs: [README.md, "src/**"]
+    excludeGlobs: []
+workSources:
+  allowedKinds: [github_issue, github_query, specification, feature_request]
+  namedIssueQueries: []
+  maximumItemsPerQueueRun: 10
+  requireRevisionPin: true
+  requireAcceptanceCriteria: true
+workspace:
+  strategy: managed_git_worktree
+  rootTemplate: <repo-parent>/graph-shipper-worktrees/<run-id>
+  # Declared commands run once, in order, in the fresh worktree before any gate.
+  # A worktree is a sibling of the repository, not a descendant, so nothing the
+  # primary clone has installed is reachable from it; without an install
+  # declared here, a gate that resolves a package cannot run at all. Each
+  # referenced command must be credential-free, idempotent, declare
+  # sideEffect: workspace, run in the worktree, and take no parameters. A
+  # monorepo declares one per dependency tree. Whatever they write must be
+  # ignored by the project's own .gitignore. Every command must preserve the
+  # pinned head and branch, and the phase refuses to hand a worktree carrying
+  # tracked changes to the planner.
+  preparationCommandRefs: []
+  retainOnFailure: true
+autonomy:
+  maximum: local_only
+  default: local_only
+  forbidBranchProtectionBypass: true
+  allowStatusComments: false
+approvalPolicy:
+  defaultEffect: forbidden
+  noForbiddenOverride: true
+  # Every planned action is forbidden unless a rule here pre-approves it, and
+  # validation refuses a policy under which no Work Run could write. Which paths
+  # a run may edit without a human approving each write is this project's
+  # decision, so none is shipped. Replace `rules: []` with, for example:
+  #
+  # rules:
+  #   - id: local-workspace-edits
+  #     effect: pre_approved
+  #     actionKinds: [write_file]
+  #     pathGlobs: ["src/**", README.md]
+  #     citation: the decision this records
+  rules: []
+verification:
+  failFast: true
+  scrubGitLocalEnvironment: true
+  checks:
+    - id: project-test
+      cadence: every_cycle
+      triggerGlobs: ["**"]
+      executor:
+        kind: command
+        commandRef: project-test
+      failureClass: planner_feedback
+      earnedEvidence:
+        observedAt: "2026-08-13"
+        againstHeadSha: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        citation: Human-observed gate evidence
+github:
+  pullRequest:
+    draft: false
+    baseBranch: main
+    # Required when autonomy.maximum is open_pr or merge_when_green.
+    sourceReference:
+      kind: neutral
+      prefix: "Source issue:"
+  requiredHostedChecks: []
+  # Omit for the Checks API. Use commit_statuses when a repository-scoped
+  # fine-grained PAT has Commit statuses read but cannot request Checks read.
+  # requiredCheckSource: commit_statuses
+  trustedFeedback:
+    reviewerActors: []
+    githubApps: []
+    requiredCheckProducers: []
+  requireBranchProtection: true
+  mergeMethod: squash
+delivery:
+  strategy: github_direct
+  terminalPredicate: merged_and_reconciled
+  commitIdentity:
+    name: Graph Shipper
+    email: graph-shipper@localhost.invalid
+concurrency:
+  defaultWorkRuns: 1
+  maximumWorkRuns: 1
+  serializeMergePerProject: true
+  serializePostMergePerProject: true
+documentation:
+  formatCommandRefs: []
+  inventoryCommandRefs: []
+  diagramChecks: []
+  rules:
+    - id: readme
+      glob: README.md
+      class: living
+      audience: user
+      topics: [overview]
+      entryPoint: true
+      protected: false
+  requiredLivingEntryPoints: [README.md]
+  triggerMatrix:
+    - pathGlobs: ["**"]
+      impacts: [release_record]
+      topics: [overview]
+  releaseRecord:
+    kind: none
+  allowReviewedNoChangeAttestation: true
+  blockBroadRewriteWithoutWorkItemAuthority: true
+postMergeHooks: []
+compensatingHooks: []
+cleanup:
+  onLocalOnlyHandoff: preserve_owned_branch_and_worktree
+  removeOwnedWorktreeAfterDeliveryTerminalSuccess: true
+  removeOwnedBranchAfterDeliveryTerminalSuccess: true
+  preserveDiagnosticsOnFailure: true
+  neverTouchUnownedPaths: true
+budgets:
+  maximumIterations: 6
+  wallClockMinutes: 60
+  malformedModelOutputRetries: 1

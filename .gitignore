@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+*.log
+.DS_Store
+
+# Runtime state never belongs in this repository.
+.graph-shipper-runtime/
+
+# Agent worktrees are runtime scratch, not repository content.
+.claude/worktrees/
+
+# A pinned commit identity is personal; keep it out of the tree.
+.githooks/identity.local.sh

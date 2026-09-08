@@ -1,0 +1,42 @@
+{
+  "name": "graph-shipper",
+  "version": "0.4.0",
+  "description": "Provider-portable agentic build-and-ship runtime",
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "graph-shipper": "dist/cli.js"
+  },
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": [
+    "dist/",
+    "examples/",
+    "CHANGELOG.md",
+    "README.md",
+    "CONTEXT.md"
+  ],
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "license": "MIT",
+  "scripts": {
+    "prepare": "sh .githooks/install",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --import tsx --test --test-timeout=60000 test/*.test.ts",
+    "test:coverage": "node --experimental-test-coverage --import tsx --test --test-timeout=60000 test/*.test.ts",
+    "smoke:credentialed-providers": "node dist/cli.js run --allow-credentialed-model-calls",
+    "verify": "npm run typecheck && npm test && npm run build"
+  },
+  "dependencies": {
+    "yaml": "2.9.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "26.2.0",
+    "tsx": "4.23.12",
+    "typescript": "7.0.2"
+  }
+}

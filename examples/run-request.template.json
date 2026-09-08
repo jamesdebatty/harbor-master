@@ -1,0 +1,40 @@
+{
+  "schemaVersion": "1.0.0",
+  "workItem": {
+    "id": "replace-me-request-1",
+    "projectId": "replace-me",
+    "source": {
+      "kind": "feature_request",
+      "identity": "replace-me-request-1",
+      "revision": "immutable-source-revision"
+    },
+    "baseBranch": "main",
+    "title": "Describe the bounded feature",
+    "body": "State the authoritative request without implementation guesses.",
+    "desiredBehavior": [
+      "Describe one externally observable behavior."
+    ],
+    "acceptanceCriteria": [
+      {
+        "criterion": "Describe what must be true.",
+        "evidence": "Name the deterministic evidence that proves it."
+      }
+    ],
+    "constraints": [
+      "local-only; no GitHub writes"
+    ],
+    "documentationAuthority": {
+      "protectedPaths": [],
+      "renameFromPaths": [],
+      "broadRewritePaths": []
+    },
+    "provenance": [
+      "request:title",
+      "request:body",
+      "request:acceptanceCriteria[0]"
+    ]
+  },
+  "buildAssignmentId": "anthropic-build",
+  "reviewAssignmentId": "openai-review",
+  "autonomy": "local_only"
+}
