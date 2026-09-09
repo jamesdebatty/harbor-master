@@ -28,7 +28,8 @@
     "test": "node --import tsx --test --test-timeout=60000 test/*.test.ts",
     "test:coverage": "node --experimental-test-coverage --import tsx --test --test-timeout=60000 test/*.test.ts",
     "smoke:credentialed-providers": "node dist/cli.js run --allow-credentialed-model-calls",
-    "verify": "npm run typecheck && npm test && npm run build"
+    "verify": "npm run typecheck && npm test && npm run build",
+    "preflight": "node scripts/publication-preflight.mjs"
   },
   "dependencies": {
     "yaml": "2.9.0",

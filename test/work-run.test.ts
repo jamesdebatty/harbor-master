@@ -6052,6 +6052,7 @@ test("two tracked paths differing only by case never produce a false undeclared 
     git(fixture.root, ["add", "notes.txt"]);
     const blob = git(fixture.root, ["hash-object", "-w", "notes.txt"]).trim();
     git(fixture.root, ["update-index", "--add", "--cacheinfo", `100644,${blob},NOTES.TXT`]);
+    writeFileSync(join(fixture.root, "NOTES.TXT"), "case-duplicate fixture\n");
     writeFileSync(join(fixture.root, "package.json"), "{}\n");
     writeFileSync(join(fixture.root, "package-lock.json"), "{}\n");
     writeFileSync(join(fixture.root, "scripts", "noop.mjs"), "export {};\n");

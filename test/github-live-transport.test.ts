@@ -451,10 +451,12 @@ test("live observation waiting backs off within bounds and stops at the Work Run
   assert.equal(slept.length, 4);
 });
 
-test("live observation waiting never sleeps past the remaining Work Run budget", async () => {
+test("live observation waiting never sleeps past the remaining Work Run budget", async (t) => {
+  let now = Date.now();
+  t.mock.method(Date, "now", () => now);
   const slept: number[] = [];
   const { live } = transport({
-    sleep: async (milliseconds) => { slept.push(milliseconds); await delay(milliseconds); },
+    sleep: async (milliseconds) => { slept.push(milliseconds); now += milliseconds; },
     pollIntervalMilliseconds: 60_000,
   });
 
