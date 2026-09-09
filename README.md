@@ -588,7 +588,7 @@ hashes so the checker can scan its own source without embedding those literals.
 These hashes are matching rules, not encryption. It requires Git and Gitleaks on PATH (tested with Gitleaks
 8.30.1; CI downloads that version and verifies its published SHA-256).
 
-The command pins HEAD, stages its committed blobs, refuses private configuration
+The command pins HEAD, disables local Git replacement objects, stages its committed blobs, refuses private configuration
 paths and unsupported entries, validates that symbolic links resolve inside the
 committed tree, and scans both file contents and link target text. Untracked local
 files and the lab history are not copied. Scanner configuration and inline ignore

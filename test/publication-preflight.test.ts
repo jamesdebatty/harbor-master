@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync, mkdirSync, symlinkSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import test from 'node:test';
 
 const cli = fileURLToPath(new URL('../scripts/publication-preflight.mjs', import.meta.url));
@@ -94,13 +95,28 @@ test('preflight permits an internal link without reading outside the committed t
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('preflight refuses the existing private-home literal policy', () => {
+test('private literal matcher recognizes synthetic anchored rules', () => {
+  const value = 'synthetic protected phrase';
+  const rules = [{ anchor: 'protected', before: 10, length: Buffer.byteLength(value),
+    sha256: createHash('sha256').update(value).digest('hex') }];
+  const program = 'const {containsPrivateLiteral}=await import(process.argv[1]); const rules=JSON.parse(process.argv[2]); console.log(JSON.stringify([containsPrivateLiteral(Buffer.from(process.argv[3]),rules),containsPrivateLiteral(Buffer.from("unrelated public text"),rules)]));';
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', program,
+    pathToFileURL(cli).href, JSON.stringify(rules), value], { env, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), [true, false]);
+});
+
+test('local replacement refs cannot conceal committed secrets', () => {
   const root = fixture();
   try {
-    writeFileSync(path.join(root, 'notes.txt'), '/Users/' + ['james', 'debatty'].join('') + '/private\n');
-    git(root, 'add', '.'); git(root, 'commit', '-qm', 'private home');
+    const token = ['ghp_16C7e42F292c6912', 'E7710c838347Ae178B4a'].join('');
+    writeFileSync(path.join(root, 'leak.txt'), `token=${token}\n`);
+    git(root, 'add', '.'); git(root, 'commit', '-qm', 'synthetic secret');
+    const original = spawnSync('git', ['rev-parse', 'HEAD:leak.txt'], { cwd: root, env, encoding: 'utf8' }).stdout.trim();
+    const benign = spawnSync('git', ['hash-object', '-w', '--stdin'], { cwd: root, env, input: 'public content\n', encoding: 'utf8' }).stdout.trim();
+    git(root, 'replace', original, benign);
     const result = spawnSync(process.execPath, [cli], { cwd: root, env, encoding: 'utf8' });
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /private literal/);
+    assert.match(result.stderr, /gitleaks failed/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync, realpathSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const privateRules = [
   {
@@ -38,63 +39,72 @@ const privateRules = [
   }
 ];
 
-const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_') && !key.startsWith('GITLEAKS_')));
+export function containsPrivateLiteral(content, rules = privateRules) {
+  for (const rule of rules) {
+    for (let found = content.indexOf(rule.anchor); found !== -1; found = content.indexOf(rule.anchor, found + 1)) {
+      const start = found - rule.before;
+      if (start >= 0 && createHash('sha256').update(content.subarray(start, start + rule.length)).digest('hex') === rule.sha256) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+const env = { ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_') && !key.startsWith('GITLEAKS_'))), GIT_NO_REPLACE_OBJECTS: '1' };
 function command(program, args, cwd = process.cwd()) {
   const result = spawnSync(program, args, { cwd, env, maxBuffer: 32 * 1024 * 1024, timeout: 120000 });
   if (result.error || result.status !== 0) throw new Error(`${program} failed: ${result.error?.message ?? result.stderr.toString().slice(-1000)}`);
   return result.stdout;
 }
-const scratch = realpathSync(mkdtempSync(path.join(tmpdir(), 'publication-preflight-')));
-try {
-  const revision = command('git', ['rev-parse', '--verify', 'HEAD^{commit}']).toString().trim();
-  const stage = path.join(scratch, 'tree'); mkdirSync(stage);
-  const inside = value => {
-    const relative = path.relative(stage, value);
-    return relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
-  };
-  const links = [];
-  const entries = command('git', ['ls-tree', '-rz', '--full-tree', revision]).toString().split('\0').filter(Boolean);
-  for (const entry of entries) {
-    const split = entry.indexOf('\t');
-    const [mode, type, oid] = entry.slice(0, split).split(' ');
-    const name = entry.slice(split + 1);
-    if (name === '.githooks/identity.local.sh' || name === 'docs/release.md' || name.split('/').includes('.env')) {
-      throw new Error(`private path in committed publication tree: ${name}`);
-    }
-    if (!['100644', '100755', '120000'].includes(mode) || type !== 'blob' || /[\x00-\x1f\x7f\ufffd]/.test(name) || path.isAbsolute(name) || name.split('/').some(part => ['.', '..', '.git'].includes(part))) {
-      throw new Error('unsafe path or non-regular file in committed publication tree');
-    }
-    const destination = path.join(stage, name);
-    mkdirSync(path.dirname(destination), { recursive: true });
-    const content = command('git', ['cat-file', 'blob', oid]);
-    for (const rule of privateRules) {
-      for (let found = content.indexOf(rule.anchor); found !== -1; found = content.indexOf(rule.anchor, found + 1)) {
-        const start = found - rule.before;
-        if (start >= 0 && createHash('sha256').update(content.subarray(start, start + rule.length)).digest('hex') === rule.sha256) {
-          throw new Error(`private literal in committed publication tree: ${name}`);
-        }
+function main() {
+  const scratch = realpathSync(mkdtempSync(path.join(tmpdir(), 'publication-preflight-')));
+  try {
+    const revision = command('git', ['rev-parse', '--verify', 'HEAD^{commit}']).toString().trim();
+    const stage = path.join(scratch, 'tree'); mkdirSync(stage);
+    const inside = value => {
+      const relative = path.relative(stage, value);
+      return relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+    };
+    const links = [];
+    const entries = command('git', ['ls-tree', '-rz', '--full-tree', revision]).toString().split('\0').filter(Boolean);
+    for (const entry of entries) {
+      const split = entry.indexOf('\t');
+      const [mode, type, oid] = entry.slice(0, split).split(' ');
+      const name = entry.slice(split + 1);
+      if (name === '.githooks/identity.local.sh' || name === 'docs/release.md' || name.split('/').includes('.env')) {
+        throw new Error(`private path in committed publication tree: ${name}`);
       }
+      if (!['100644', '100755', '120000'].includes(mode) || type !== 'blob' || /[\x00-\x1f\x7f\ufffd]/.test(name) || path.isAbsolute(name) || name.split('/').some(part => ['.', '..', '.git'].includes(part))) {
+        throw new Error('unsafe path or non-regular file in committed publication tree');
+      }
+      const destination = path.join(stage, name);
+      mkdirSync(path.dirname(destination), { recursive: true });
+      const content = command('git', ['cat-file', 'blob', oid]);
+      if (containsPrivateLiteral(content)) throw new Error(`private literal in committed publication tree: ${name}`);
+      if (mode === '120000') {
+        const target = content.toString();
+        if (path.isAbsolute(target) || !inside(path.resolve(path.dirname(destination), target))) throw new Error('unsafe link outside committed tree');
+        links.push({ destination, target, content });
+      } else writeFileSync(destination, content);
     }
-    if (mode === '120000') {
-      const target = content.toString();
-      if (path.isAbsolute(target) || !inside(path.resolve(path.dirname(destination), target))) throw new Error('unsafe link outside committed tree');
-      links.push({ destination, target, content });
-    } else writeFileSync(destination, content);
+    for (const link of links) symlinkSync(link.target, link.destination);
+    for (const link of links) if (!inside(realpathSync(link.destination))) throw new Error('unsafe link outside committed tree');
+    for (const link of links) { unlinkSync(link.destination); writeFileSync(link.destination, link.content); }
+    const config = path.join(scratch, 'scanner.toml');
+    const ignore = path.join(scratch, 'ignore');
+    writeFileSync(config, '[extend]\nuseDefault = true\n'); writeFileSync(ignore, '');
+    const report = command('gitleaks', ['dir', stage, '--redact', '--no-banner', '--config', config,
+      '--gitleaks-ignore-path', ignore, '--ignore-gitleaks-allow', '--report-format', 'json', '--report-path', '-'], scratch);
+    const findings = JSON.parse(report.toString());
+    if (!Array.isArray(findings) || findings.length !== 0) throw new Error('scanner did not return a clean report');
+    console.log(JSON.stringify({ revision, files: entries.length, scanner: 'gitleaks', passed: true }));
+  } catch (error) {
+    console.error(`Publication preflight refused: ${error.message}`);
+    process.exitCode = 1;
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
   }
-  for (const link of links) symlinkSync(link.target, link.destination);
-  for (const link of links) if (!inside(realpathSync(link.destination))) throw new Error('unsafe link outside committed tree');
-  for (const link of links) { unlinkSync(link.destination); writeFileSync(link.destination, link.content); }
-  const config = path.join(scratch, 'scanner.toml');
-  const ignore = path.join(scratch, 'ignore');
-  writeFileSync(config, '[extend]\nuseDefault = true\n'); writeFileSync(ignore, '');
-  const report = command('gitleaks', ['dir', stage, '--redact', '--no-banner', '--config', config,
-    '--gitleaks-ignore-path', ignore, '--ignore-gitleaks-allow', '--report-format', 'json', '--report-path', '-'], scratch);
-  const findings = JSON.parse(report.toString());
-  if (!Array.isArray(findings) || findings.length !== 0) throw new Error('scanner did not return a clean report');
-  console.log(JSON.stringify({ revision, files: entries.length, scanner: 'gitleaks', passed: true }));
-} catch (error) {
-  console.error(`Publication preflight refused: ${error.message}`);
-  process.exitCode = 1;
-} finally {
-  rmSync(scratch, { recursive: true, force: true });
 }
+
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) main();
