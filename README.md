@@ -578,3 +578,24 @@ npm run verify
 Public behavior is exercised through the CLI against disposable Git projects.
 Provider transport conformance uses injected offline responses. No test calls a
 model provider, GitHub, or a product repository.
+
+
+## Publication preflight
+
+Run `npm run preflight` from the checkout before treating a committed revision
+as ready to publish. The existing private-literal sweep is retained as anchored
+hashes so the checker can scan its own source without embedding those literals.
+These hashes are matching rules, not encryption. It requires Git and Gitleaks on PATH (tested with Gitleaks
+8.30.1; CI downloads that version and verifies its published SHA-256).
+
+The command pins HEAD, stages its committed blobs, refuses private configuration
+paths and unsupported entries, validates that symbolic links resolve inside the
+committed tree, and scans both file contents and link target text. Untracked local
+files and the lab history are not copied. Scanner configuration and inline ignore
+comments cannot disable the fixed default-rule scan. Missing or failing scanners
+refuse the preflight; findings are redacted. Temporary files are removed afterward.
+
+The verify workflow runs this gate on pull requests and main pushes. Passing is
+not a publication action or proof of model/runtime correctness; normal review and
+`npm run verify` still apply. This repository remains public-canonical, with its
+ordinary Git history and development workflow.
